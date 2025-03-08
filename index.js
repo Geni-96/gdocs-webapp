@@ -2,6 +2,7 @@ const express = require('express');
 const session = require('express-session');
 const passport = require('passport');
 const User = require('./models/User');
+const { google } = require('googleapis');
 require('./auth');
 
 const app = express();
@@ -20,7 +21,7 @@ app.get('/', (req, res) => {
 });
 
 app.get('/auth/google',
-  passport.authenticate('google', { scope: [ 'email', 'profile' ] }
+  passport.authenticate('google', { scope: [ 'email', 'profile', 'https://www.googleapis.com/auth/documents' ] }
 ));
 
 app.get( '/auth/google/callback',
@@ -50,4 +51,53 @@ app.get('/auth/google/failure', (req, res) => {
   res.send('Failed to authenticate..');
 });
 
+app.get('/insert-text', async (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).send('Unauthorized');
+  }
+
+  const docId = '1atJOWjkanoGPYN3wxfjKgZOL8LgALTJzQLBEJkYbjaQ'; // Replace with your document ID
+  const startIndex = 1;  // Choose your starting index
+  const text = 'Hello, this is the new text!';
+
+  try {
+    const result = await insertTextToDocument(req.user.accessToken, docId, startIndex, text);
+    res.send(result);
+  } catch (err) {
+    res.status(500).send('Failed to insert text');
+  }
+});
+
 app.listen(5001, () => console.log('listening on port: 5001'));
+
+async function insertTextToDocument(accessToken, docId, startIndex, text) {
+  const auth = new google.auth.OAuth2();
+  auth.setCredentials({ access_token: accessToken });
+
+  const docs = google.docs({ version: 'v1', auth });
+
+  const requests = [
+    {
+      insertText: {
+        location: {
+          index: startIndex, // Start position in the document
+        },
+        text: text,
+      },
+    },
+  ];
+
+  try {
+    const response = await docs.documents.batchUpdate({
+      documentId: docId,
+      requestBody: {
+        requests: requests,
+      },
+    });
+    console.log('Text inserted:', response.data);
+    return response.data;
+  } catch (err) {
+    console.error('Error inserting text:', err);
+    throw new Error('Failed to insert text');
+  }
+}
